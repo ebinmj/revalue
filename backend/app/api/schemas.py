@@ -1,4 +1,55 @@
-from pydantic import BaseModel, Field
+from decimal import Decimal
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ListingStatus(str, Enum):
+    available = "available"
+    reserved = "reserved"
+    sold = "sold"
+    removed = "removed"
+
+
+class ProfileUpsertRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default="", max_length=120)
+
+
+class MarketplaceListingCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=4000)
+    category: str = Field(min_length=1, max_length=80)
+    condition: str = Field(min_length=1, max_length=80)
+    price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    currency: str = Field(default="INR", min_length=3, max_length=3)
+    image_url: str | None = Field(default=None, max_length=2048)
+
+
+class MarketplaceListingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=4000)
+    category: str | None = Field(default=None, min_length=1, max_length=80)
+    condition: str | None = Field(default=None, min_length=1, max_length=80)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    image_url: str | None = Field(default=None, max_length=2048)
+    status: ListingStatus | None = None
+
+
+class ComponentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    component_name: str = Field(min_length=1, max_length=120)
+    brand: str | None = Field(default=None, max_length=120)
+    model: str | None = Field(default=None, max_length=120)
+    condition: str = Field(min_length=1, max_length=80)
+    compatibility: str | None = Field(default=None, max_length=500)
 
 
 class AnalyzeRequest(BaseModel):

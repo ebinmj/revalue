@@ -1,8 +1,38 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:re_value/services/analysis_service.dart';
+import 'package:re_value/models/product_analysis.dart';
 import 'package:re_value/services/revalue_engine.dart';
+
+class MockAnalysisService {
+  const MockAnalysisService();
+
+  Future<ProductAnalysis> analyzeItem({
+    required File image,
+    required String description,
+  }) async {
+    return const ProductAnalysis(
+      category: 'Laptop',
+      condition: 'Broken / partially functional',
+      problem: 'Possible power-related issue',
+      visibleComponents: [
+        'RAM',
+        'SSD',
+        'Display',
+        'Keyboard',
+        'Battery',
+        'Charger',
+      ],
+      possibleMaterials: [
+        'Aluminium',
+        'Plastic',
+        'Copper',
+        'Electronic components',
+      ],
+      riskFactors: ['Battery may require careful handling'],
+    );
+  }
+}
 
 void main() {
   test('mock analysis produces structured laptop facts', () async {

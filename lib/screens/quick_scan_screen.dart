@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../services/analysis_service.dart';
 import '../widgets/app_page.dart';
-import 'diagnostic_chat_screen.dart';
 
 class QuickScanScreen extends StatefulWidget {
   const QuickScanScreen({super.key});
@@ -20,6 +20,8 @@ class _QuickScanScreenState extends State<QuickScanScreen> {
   Uint8List? _selectedImageBytes;
   String? _imageError;
   String? _descriptionError;
+  bool _isAnalyzing = false;
+  String? _analysisError;
 
   @override
   void dispose() {
@@ -73,26 +75,56 @@ class _QuickScanScreenState extends State<QuickScanScreen> {
     }
   }
 
-  void _startDiagnostic() {
+  Future<void> _startDiagnostic() async {
     final description = _descriptionController.text.trim();
     setState(() {
-      _imageError =
-          _selectedImage == null ? 'Please add a photo of the item.' : null;
-      _descriptionError =
-          description.isEmpty ? 'Tell us what you know about the item.' : null;
+      _imageError = _selectedImage == null
+          ? 'Please add a photo of the item.'
+          : null;
+      _descriptionError = description.isEmpty
+          ? 'Tell us what you know about the item.'
+          : null;
+      _analysisError = null;
     });
 
     if (_selectedImage == null || description.isEmpty) return;
 
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => DiagnosticChatScreen(
-          imageBytes: _selectedImageBytes!,
-          initialDescription: description,
-          mode: 'quick_scan',
+    setState(() {
+      _isAnalyzing = true;
+    });
+
+    try {
+      final result = await AnalysisService().analyzeImage(
+        imageBytes: _selectedImageBytes!,
+        message: description,
+        mode: 'quick_scan',
+        conversationId: 'quick-scan-${DateTime.now().millisecondsSinceEpoch}',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _isAnalyzing = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'AI response received: ${result['analysis']?['summary'] ?? 'Item identified.'}',
+          ),
         ),
-      ),
-    );
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isAnalyzing = false;
+        _analysisError = error.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
   }
 
   @override
@@ -209,12 +241,38 @@ class _QuickScanScreenState extends State<QuickScanScreen> {
             ),
           ],
           const SizedBox(height: 24),
+          if (_analysisError != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _analysisError!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _startDiagnostic,
-              icon: const Icon(Icons.auto_awesome_outlined),
-              label: const Text('Start AI Diagnostic'),
+              onPressed: _isAnalyzing ? null : _startDiagnostic,
+              icon: _isAnalyzing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome_outlined),
+              label: Text(
+                _isAnalyzing ? 'Analyzing your item...' : 'Start AI Diagnostic',
+              ),
             ),
           ),
         ],

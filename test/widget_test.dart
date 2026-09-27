@@ -1,68 +1,86 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:re_value/app/app.dart';
+import 'package:re_value/models/user.dart';
+import 'package:re_value/services/auth_service.dart';
+
+class _TestAuthService implements AuthService {
+  _TestAuthService({bool initiallyLoggedIn = false})
+    : _loggedIn = initiallyLoggedIn;
+
+  bool _loggedIn;
+
+  final User _user = User(
+    id: 'test-user-id',
+    name: 'Test User',
+    email: 'test@example.com',
+    createdAt: DateTime.utc(2026),
+  );
+
+  @override
+  String? get accessToken => null;
+
+  @override
+  Future<User?> getCurrentUser() async => _user;
+
+  @override
+  Future<bool> isLoggedIn() async => _loggedIn;
+
+  @override
+  Future<User?> login({required String email, required String password}) async {
+    _loggedIn = true;
+    return _user;
+  }
+
+  @override
+  Future<void> logout() async {}
+
+  @override
+  Future<User?> signup({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    _loggedIn = true;
+    return _user;
+  }
+}
 
 void main() {
-  testWidgets('ReValue app shell renders', (WidgetTester tester) async {
-    await tester.pumpWidget(const ReValueApp());
-
-    expect(
-      find.text('Give unwanted things a better next step.'),
-      findsOneWidget,
-    );
-    expect(find.text('What do you want to do?'), findsOneWidget);
-    expect(find.text('REDUCE'), findsOneWidget);
-    expect(find.text('Scan an item'), findsOneWidget);
-  });
-
-  testWidgets('Home actions use local navigation and feedback', (
+  testWidgets('Unauthenticated users see the login screen', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const ReValueApp());
+    await tester.pumpWidget(ReValueApp(authService: _TestAuthService()));
+    await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(FilledButton));
-    await tester.pumpAndSettle();
-    expect(
-      find.text(
-        'Share a photo and describe what is wrong. ReValue will suggest a better next step.',
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.text('Home'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('REDUCE'));
-    await tester.pumpAndSettle();
-    expect(find.text('Reduce'), findsOneWidget);
+    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Login'), findsOneWidget);
+    expect(find.text("Don't have an account? Sign up"), findsOneWidget);
   });
 
-  testWidgets('all Home actions open their intended destination', (
+  testWidgets('Users can open the signup screen', (WidgetTester tester) async {
+    await tester.pumpWidget(ReValueApp(authService: _TestAuthService()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("Don't have an account? Sign up"));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create account'), findsOneWidget);
+    expect(find.text('Join ReValue'), findsOneWidget);
+  });
+
+  testWidgets('Authenticated users can open Quick Scan', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const ReValueApp());
-
-    final destinations = <String, String>{
-      'REDUCE': 'Reduce',
-      'REUSE': 'Reuse Marketplace',
-      'RECYCLE': 'Recycle',
-      'RIDDANCE': 'Riddance',
-    };
-
-    for (final entry in destinations.entries) {
-      await tester.ensureVisible(find.text(entry.key));
-      await tester.tap(find.text(entry.key));
-      await tester.pumpAndSettle();
-      expect(find.text(entry.value), findsAtLeastNWidgets(1));
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-    }
-
+    await tester.pumpWidget(
+      ReValueApp(authService: _TestAuthService(initiallyLoggedIn: true)),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Scan an item'));
     await tester.pumpAndSettle();
+
     expect(
       find.text(
-        'Share a photo and describe what is wrong. ReValue will suggest a better next step.',
+        'Share a photo and describe what is wrong. ReValue\'s AI will ask a few questions and find the best recovery path.',
       ),
       findsOneWidget,
     );

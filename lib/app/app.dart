@@ -8,19 +8,23 @@ import '../screens/impact_screen.dart';
 import '../screens/profile_screen.dart';
 import '../screens/quick_scan_screen.dart';
 import '../screens/reuse_screen.dart';
+import '../services/api_service.dart';
 import '../services/auth_service.dart';
-import '../services/mock_auth_service.dart';
+import '../services/supabase_auth_service.dart';
 import '../theme/app_theme.dart';
 
 class ReValueApp extends StatefulWidget {
-  const ReValueApp({super.key});
+  const ReValueApp({this.authService, super.key});
+
+  final AuthService? authService;
 
   @override
   State<ReValueApp> createState() => _ReValueAppState();
 }
 
 class _ReValueAppState extends State<ReValueApp> {
-  final AuthService _authService = MockAuthService();
+  late final AuthService _authService =
+      widget.authService ?? SupabaseAuthService();
   User? _currentUser;
   bool _checkingAuth = true;
   bool _showSignup = false;
@@ -108,7 +112,11 @@ class _ReValueAppState extends State<ReValueApp> {
                 index: _selectedIndex,
                 children: [
                   HomeScreen(user: _currentUser!, onQuickScan: _openQuickScan),
-                  const ReuseScreen(),
+                  ReuseScreen(
+                    apiService: ApiService(
+                      accessTokenProvider: () => _authService.accessToken,
+                    ),
+                  ),
                   const QuickScanScreen(),
                   const ImpactScreen(),
                   ProfileScreen(

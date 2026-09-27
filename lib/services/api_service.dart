@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/analysis_data.dart';
 import '../models/api_models.dart';
+import '../models/marketplace_listing.dart';
 
 class ApiException implements Exception {
   const ApiException(this.message);
@@ -16,7 +18,7 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  ApiService({String? baseUrl, http.Client? client})
+  ApiService({String? baseUrl, http.Client? client, this._accessTokenProvider})
     : baseUrl = (baseUrl ?? _defaultBaseUrl).replaceAll(RegExp(r'/$'), ''),
       _client = client ?? http.Client();
   static String get _defaultBaseUrl {
@@ -29,6 +31,70 @@ class ApiService {
 
   final String baseUrl;
   final http.Client _client;
+  final String? Function()? _accessTokenProvider;
+
+  Future<void> ensureProfile({required String name}) async {
+    await _marketplaceRequest(
+      'POST',
+      '/api/auth/profile',
+      body: {'name': name},
+    );
+  }
+
+  Future<Map<String, dynamic>> _marketplaceRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? query,
+  }) async {
+    final token = _accessTokenProvider?.call();
+    if (token == null || token.isEmpty) {
+      throw const ApiException(
+        'Your session has expired. Please log in again.',
+      );
+    }
+
+    final uri = Uri.parse('$baseUrl$path').replace(queryParameters: query);
+    final request = http.Request(method, uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..headers['Accept'] = 'application/json';
+    if (body != null) {
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode(body);
+    }
+
+    try {
+      final streamed = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 30));
+      final response = await http.Response.fromStream(streamed)
+          .timeout(const Duration(seconds: 30));
+      final decoded = response.body.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(_errorMessage(decoded, response.statusCode));
+      }
+      if (decoded is! Map<String, dynamic>) {
+        throw const ApiException('The backend returned an invalid response.');
+      }
+      return decoded;
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiException(
+        'The marketplace request timed out. Please try again.',
+      );
+    } on http.ClientException {
+      throw const ApiException(
+        'ReValue could not reach the backend. Check your connection and try again.',
+      );
+    } on FormatException {
+      throw const ApiException('The backend returned invalid JSON.');
+    } catch (_) {
+      throw const ApiException('Marketplace request failed. Please try again.');
+    }
+  }
 
   Future<ApiAnalysisResponse> analyzeItem({
     required Uint8List imageBytes,
@@ -65,15 +131,59 @@ class ApiService {
     return ApiRepairEstimateResponse.fromJson(response);
   }
 
-  Future<ApiMarketplaceResponse> getMarketplaceMatches({
+  Future<List<MarketplaceListing>> getMarketplaceListings({
     String query = '',
     String? category,
+    String? condition,
+    String? status,
+    bool mine = false,
   }) async {
-    final response = await _post('/api/marketplace/match', {
-      'query': query,
-      'category': category,
-    });
-    return ApiMarketplaceResponse.fromJson(response);
+    final queryParameters = <String, String>{};
+    if (query.trim().isNotEmpty) queryParameters['search'] = query.trim();
+    if (category != null) queryParameters['category'] = category;
+    if (condition != null) queryParameters['condition'] = condition;
+    if (status != null) queryParameters['status'] = status;
+    if (mine) queryParameters['mine'] = 'true';
+    final response = await _marketplaceRequest(
+      'GET',
+      '/api/marketplace/listings',
+      query: queryParameters,
+    );
+    final rows = response['listings'];
+    if (rows is! List) {
+      throw const ApiException(
+        'The backend returned invalid marketplace data.',
+      );
+    }
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(MarketplaceListing.fromJson)
+        .toList();
+  }
+
+  Future<MarketplaceListing> createMarketplaceListing({
+    required String title,
+    required String description,
+    required String category,
+    required String condition,
+    required double price,
+    String currency = 'INR',
+    String? imageUrl,
+  }) async {
+    final response = await _marketplaceRequest(
+      'POST',
+      '/api/marketplace/listings',
+      body: {
+        'title': title,
+        'description': description,
+        'category': category,
+        'condition': condition,
+        'price': price,
+        'currency': currency,
+        'image_url': imageUrl,
+      },
+    );
+    return MarketplaceListing.fromJson(response);
   }
 
   Future<Map<String, dynamic>> _post(

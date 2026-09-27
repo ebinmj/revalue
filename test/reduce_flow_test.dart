@@ -7,27 +7,36 @@ import 'package:re_value/screens/reduce_screen.dart';
 import 'package:re_value/services/reduce_service.dart';
 
 void main() {
-  test('MockReduceService returns repair-focused facts and estimates', () async {
-    const service = MockReduceService();
-    final result = await service.analyzeForRepair(
-      image: File('dummy.jpg'),
-      problemDescription: "Laptop doesn't turn on. Screen still works.",
-    );
+  test(
+    'MockReduceService returns repair-focused facts and estimates',
+    () async {
+      const service = MockReduceService();
+      final result = await service.analyzeForRepair(
+        image: File('dummy.jpg'),
+        problemDescription: "Laptop doesn't turn on. Screen still works.",
+      );
 
-    expect(result.product, 'Laptop');
-    expect(result.condition, 'Broken / partially functional');
-    expect(result.reportedProblem, 'Does not turn on');
-    expect(result.possibleIssue, 'Possible power-related issue');
-    expect(result.repairability, 'Potentially repairable');
-    expect(
-      result.potentialRepairAreas,
-      containsAll(['Battery', 'Charger', 'Power circuit', 'RAM', 'Motherboard']),
-    );
-    expect(result.estimate.minimumCost, 2000);
-    expect(result.estimate.maximumCost, 3000);
-    expect(result.replacementEstimateMin, 20000);
-    expect(result.replacementEstimateMax, 25000);
-  });
+      expect(result.product, 'Laptop');
+      expect(result.condition, 'Broken / partially functional');
+      expect(result.reportedProblem, 'Does not turn on');
+      expect(result.possibleIssue, 'Possible power-related issue');
+      expect(result.repairability, 'Potentially repairable');
+      expect(
+        result.potentialRepairAreas,
+        containsAll([
+          'Battery',
+          'Charger',
+          'Power circuit',
+          'RAM',
+          'Motherboard',
+        ]),
+      );
+      expect(result.estimate.minimumCost, 2000);
+      expect(result.estimate.maximumCost, 3000);
+      expect(result.replacementEstimateMin, 20000);
+      expect(result.replacementEstimateMax, 25000);
+    },
+  );
 
   testWidgets('ReduceScreen renders dedicated repair options', (
     WidgetTester tester,
@@ -62,7 +71,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: ReduceScanScreen()));
 
     await tester.tap(
-      find.widgetWithText(FilledButton, 'Analyze for Repair'),
+      find.widgetWithText(FilledButton, 'Start Repair Diagnostic'),
     );
     await tester.pumpAndSettle();
 

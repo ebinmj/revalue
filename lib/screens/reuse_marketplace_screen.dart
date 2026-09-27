@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models/marketplace_listing.dart';
-import '../models/api_models.dart';
 import '../services/api_service.dart';
 import '../widgets/listing_card.dart';
 
@@ -23,33 +22,45 @@ class ReuseMarketplaceScreen extends StatefulWidget {
 
 class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
   static const _categories = [
+    'RAM',
+    'Storage',
+    'Display',
     'Components',
     'Electronics',
-    'Tools',
-    'Household',
-    'Clothing',
   ];
 
-  late final Future<ApiMarketplaceResponse> _marketplaceFuture;
+  late final ApiService _apiService;
+  late Future<List<MarketplaceListing>> _marketplaceFuture;
   List<MarketplaceListing> _listings = const [];
   final _searchController = TextEditingController();
   String? _selectedCategory;
+  bool _showMine = false;
 
   @override
   void initState() {
     super.initState();
+    _apiService = widget.apiService ?? ApiService();
     if (widget.initialQuery != null) {
       _searchController.text = widget.initialQuery!;
     }
     if (widget.initialCategory != null) {
       _selectedCategory = widget.initialCategory;
     }
-    _marketplaceFuture = (widget.apiService ?? ApiService())
-        .getMarketplaceMatches()
-        .then((response) {
-          _listings = response.listings;
-          return response;
-        });
+    _marketplaceFuture = _fetchListings();
+  }
+
+  Future<List<MarketplaceListing>> _fetchListings() async {
+    final listings = await _apiService.getMarketplaceListings(
+      query: _searchController.text,
+      category: _selectedCategory,
+      mine: _showMine,
+    );
+    _listings = listings;
+    return listings;
+  }
+
+  void _refreshListings() {
+    setState(() => _marketplaceFuture = _fetchListings());
   }
 
   @override
@@ -59,16 +70,7 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
   }
 
   List<MarketplaceListing> get _filteredListings {
-    final query = _searchController.text.trim().toLowerCase();
-    return _listings.where((listing) {
-      final matchesSearch =
-          query.isEmpty ||
-          listing.title.toLowerCase().contains(query) ||
-          listing.description.toLowerCase().contains(query);
-      final matchesCategory =
-          _selectedCategory == null || listing.category == _selectedCategory;
-      return matchesSearch && matchesCategory;
-    }).toList();
+    return _listings;
   }
 
   @override
@@ -76,8 +78,22 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Reuse Marketplace')),
-      body: FutureBuilder<ApiMarketplaceResponse>(
+      appBar: AppBar(
+        title: const Text('Reuse Marketplace'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh listings',
+            onPressed: _refreshListings,
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            tooltip: 'Create listing',
+            onPressed: _showCreateListing,
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<MarketplaceListing>>(
         future: _marketplaceFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -96,6 +112,7 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
                 'Exception: ',
                 '',
               ),
+              onRetry: _refreshListings,
             );
           }
           final listings = _filteredListings;
@@ -118,22 +135,40 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
               const SizedBox(height: 20),
               TextField(
                 controller: _searchController,
-                onChanged: (_) => setState(() {}),
+                onSubmitted: (_) => _refreshListings(),
                 decoration: InputDecoration(
                   hintText: 'Search listings',
                   prefixIcon: const Icon(Icons.search),
                   suffixIcon: _searchController.text.isEmpty
-                      ? null
+                      ? IconButton(
+                          tooltip: 'Search listings',
+                          onPressed: _refreshListings,
+                          icon: const Icon(Icons.search),
+                        )
                       : IconButton(
                           tooltip: 'Clear search',
                           onPressed: () {
                             _searchController.clear();
-                            setState(() {});
+                            _refreshListings();
                           },
                           icon: const Icon(Icons.clear),
                         ),
                   border: const OutlineInputBorder(),
                 ),
+              ),
+              const SizedBox(height: 12),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('All listings')),
+                  ButtonSegment(value: true, label: Text('My listings')),
+                ],
+                selected: {_showMine},
+                onSelectionChanged: (selection) {
+                  setState(() {
+                    _showMine = selection.single;
+                    _marketplaceFuture = _fetchListings();
+                  });
+                },
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -146,8 +181,10 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
                       child: ChoiceChip(
                         label: const Text('All'),
                         selected: _selectedCategory == null,
-                        onSelected: (_) =>
-                            setState(() => _selectedCategory = null),
+                        onSelected: (_) => setState(() {
+                          _selectedCategory = null;
+                          _marketplaceFuture = _fetchListings();
+                        }),
                       ),
                     ),
                     ..._categories.map(
@@ -156,10 +193,10 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
                         child: ChoiceChip(
                           label: Text(category),
                           selected: _selectedCategory == category,
-                          onSelected: (selected) => setState(
-                            () =>
-                                _selectedCategory = selected ? category : null,
-                          ),
+                          onSelected: (selected) => setState(() {
+                            _selectedCategory = selected ? category : null;
+                            _marketplaceFuture = _fetchListings();
+                          }),
                         ),
                       ),
                     ),
@@ -168,7 +205,7 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
               ),
               const SizedBox(height: 20),
               if (listings.isEmpty)
-                const _EmptyListings()
+                _EmptyListings(onCreate: _showMine ? _showCreateListing : null)
               else
                 ...listings.map(
                   (listing) => Padding(
@@ -182,6 +219,146 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
                 ),
             ],
           );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showCreateListing() async {
+    final formKey = GlobalKey<FormState>();
+    final title = TextEditingController();
+    final description = TextEditingController();
+    final category = TextEditingController(text: 'RAM');
+    final condition = TextEditingController(text: 'Used - Working');
+    final price = TextEditingController();
+    final imageUrl = TextEditingController();
+    var isSaving = false;
+    String? error;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Create listing'),
+          content: SizedBox(
+            width: 440,
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _listingField(title, 'Title'),
+                    _listingField(description, 'Description', maxLines: 3),
+                    _listingField(category, 'Category'),
+                    _listingField(condition, 'Condition'),
+                    _listingField(
+                      price,
+                      'Price (INR)',
+                      keyboardType: TextInputType.number,
+                    ),
+                    _listingField(
+                      imageUrl,
+                      'Image URL (optional)',
+                      required: false,
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        error!,
+                        style: TextStyle(
+                          color: Theme.of(dialogContext).colorScheme.error,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (!(formKey.currentState?.validate() ?? false)) return;
+                      setDialogState(() {
+                        isSaving = true;
+                        error = null;
+                      });
+                      try {
+                        await _apiService.createMarketplaceListing(
+                          title: title.text.trim(),
+                          description: description.text.trim(),
+                          category: category.text.trim(),
+                          condition: condition.text.trim(),
+                          price: double.parse(price.text.trim()),
+                          imageUrl: imageUrl.text.trim().isEmpty
+                              ? null
+                              : imageUrl.text.trim(),
+                        );
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+                        if (!mounted) return;
+                        setState(() {
+                          _showMine = true;
+                          _marketplaceFuture = _fetchListings();
+                        });
+                      } catch (exception) {
+                        if (!dialogContext.mounted) return;
+                        setDialogState(() {
+                          isSaving = false;
+                          error = exception.toString().replaceFirst(
+                            'Exception: ',
+                            '',
+                          );
+                        });
+                      }
+                    },
+              child: Text(isSaving ? 'Saving...' : 'Publish listing'),
+            ),
+          ],
+        ),
+      ),
+    );
+    title.dispose();
+    description.dispose();
+    category.dispose();
+    condition.dispose();
+    price.dispose();
+    imageUrl.dispose();
+  }
+
+  Widget _listingField(
+    TextEditingController controller,
+    String label, {
+    int maxLines = 1,
+    TextInputType? keyboardType,
+    bool required = true,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: controller,
+        maxLines: maxLines,
+        keyboardType: keyboardType,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
+        validator: (value) {
+          if (required && (value == null || value.trim().isEmpty)) {
+            return 'This field is required.';
+          }
+          if (keyboardType == TextInputType.number &&
+              double.tryParse(value?.trim() ?? '') == null) {
+            return 'Enter a valid price.';
+          }
+          return null;
         },
       ),
     );
@@ -229,35 +406,21 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
   }
 
   void _contactSeller(BuildContext context, MarketplaceListing listing) {
-    final messageController = TextEditingController(
-      text:
-          'Hi ${listing.seller}, is this ${listing.title} still available on ReValue?',
-    );
-
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Contact ${listing.seller}'),
+        title: const Text('Interested in this listing?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Item: ${listing.title} (${_formatPrice(listing.price)})',
+              '${listing.title} · ${_formatPrice(listing.price)}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: messageController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Your inquiry message',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
             Text(
-              'Direct peer-to-peer communication. No payment or shipping is processed on ReValue.',
+              'Seller: ${listing.seller}. ReValue does not process messages or payments yet.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -268,16 +431,8 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Message sent to ${listing.seller}!'),
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                ),
-              );
-            },
-            child: const Text('Send Message'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -286,7 +441,9 @@ class _ReuseMarketplaceScreenState extends State<ReuseMarketplaceScreen> {
 }
 
 class _EmptyListings extends StatelessWidget {
-  const _EmptyListings();
+  const _EmptyListings({this.onCreate});
+
+  final VoidCallback? onCreate;
 
   @override
   Widget build(BuildContext context) {
@@ -306,6 +463,14 @@ class _EmptyListings extends StatelessWidget {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyLarge,
             ),
+            if (onCreate != null) ...[
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: onCreate,
+                icon: const Icon(Icons.add),
+                label: const Text('Create listing'),
+              ),
+            ],
           ],
         ),
       ),
@@ -319,12 +484,14 @@ class _MarketplaceStatus extends StatelessWidget {
     required this.title,
     required this.message,
     this.loading = false,
+    this.onRetry,
   });
 
   final IconData icon;
   final String title;
   final String message;
   final bool loading;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -340,6 +507,14 @@ class _MarketplaceStatus extends StatelessWidget {
             Text(title, style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(message, textAlign: TextAlign.center),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
             if (loading) ...[
               const SizedBox(height: 18),
               const SizedBox.square(

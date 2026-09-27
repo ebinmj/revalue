@@ -4,6 +4,9 @@ import 'auth_service.dart';
 class MockAuthService implements AuthService {
   MockAuthService();
 
+  @override
+  String? get accessToken => null;
+
   static const _demoEmail = 'demo@revalue.app';
   static const _demoPassword = 'ReValue123';
 

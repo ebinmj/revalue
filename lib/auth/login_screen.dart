@@ -21,8 +21,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController(text: 'demo@revalue.app');
-  final _passwordController = TextEditingController(text: 'ReValue123');
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
   bool _isSubmitting = false;
@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
-                        labelText: 'Email or username',
+                        labelText: 'Email',
                         prefixIcon: Icon(Icons.email_outlined),
                       ),
                       validator: (value) {
@@ -165,29 +165,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: const Text("Don't have an account? Sign up"),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Demo account',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text('Email: demo@revalue.app'),
-                          Text('Password: ReValue123'),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -227,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorText = 'Invalid email or password.';
+        _errorText = e.toString().replaceFirst('AuthException: ', '');
         _isSubmitting = false;
       });
     }

@@ -64,7 +64,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Create a mock account to continue.',
+                      'Create your ReValue account.',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -232,10 +232,10 @@ class _SignupScreenState extends State<SignupScreen> {
       }
 
       widget.onSignupSuccess(user);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorText = 'Unable to create account. Please try again.';
+        _errorText = error.toString().replaceFirst('AuthException: ', '');
         _isSubmitting = false;
       });
     }
