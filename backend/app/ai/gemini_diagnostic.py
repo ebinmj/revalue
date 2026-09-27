@@ -196,26 +196,66 @@ Return a JSON object with exactly these keys:
 # Mock fallback
 # ---------------------------------------------------------------------------
 
+def _detect_laptop_context(description: str) -> str:
+    text = description.lower()
+    if "asus" in text and "laptop" in text:
+        return "ASUS Laptop"
+    if "laptop" in text or "notebook" in text:
+        return "Laptop"
+    if "asus" in text:
+        return "ASUS Device"
+    return "Electronic Device"
+
+
+def _power_failure_questions(description: str) -> list[str]:
+    text = description.lower()
+    if "laptop" in text or "notebook" in text or "asus" in text:
+        return [
+            "What happens when you press the power button?",
+            "Does the charging indicator turn on when the charger is connected?",
+            "Did the laptop stop working suddenly or had it been showing earlier warnings?",
+        ]
+    return [
+        "How long have you had this device and when did the problem start?",
+        "Does the device show any lights, sounds, or signs of power when you try to turn it on?",
+        "Has the device been dropped, exposed to water, or had any physical damage recently?",
+    ]
+
+
 def _mock_start_response(description: str) -> dict[str, Any]:
     """Deterministic response when Gemini is unavailable."""
+    product = _detect_laptop_context(description)
     return {
-        "identified_product": "Electronic Device",
-        "identified_condition": "Broken / partially functional",
+        "identified_product": product,
+        "identified_condition": "Not powering on / possible power-related fault",
         "ai_observation": (
-            "I can see an electronic item that appears to have some damage or fault. "
-            "Let me ask a few questions to better understand the problem."
+            f"I can see this appears to be a {product.lower()} and the immediate symptom is a no-power state. "
+            "I need a few details to narrow the likely cause before recommending a repair path."
         ),
-        "follow_up_questions": [
-            "How long have you had this device and when did the problem start?",
-            "Does the device show any lights, sounds, or signs of power when you try to turn it on?",
-            "Has the device been dropped, exposed to water, or had any physical damage recently?",
-        ],
+        "follow_up_questions": _power_failure_questions(description),
         "is_complete": False,
     }
 
 
-def _mock_continue_response(round_num: int, is_final: bool) -> dict[str, Any]:
-    if not is_final:
+def _laptop_sufficient_answers(answers: list[str]) -> bool:
+    combined = " ".join(a.lower() for a in answers)
+    has_no_power = any(
+        phrase in combined
+        for phrase in ["nothing happens", "won't turn on", "does not turn on", "no power", "no response"]
+    )
+    has_charger_indicator = any(
+        phrase in combined
+        for phrase in ["charging light", "charging indicator", "charger light", "lights up when plugged in"]
+    )
+    has_sudden = any(
+        phrase in combined for phrase in ["stopped suddenly", "yesterday", "suddenly", "recently"]
+    )
+    return has_no_power and has_charger_indicator and has_sudden
+
+
+def _mock_continue_response(round_num: int, is_final: bool, answers: list[str] | None = None) -> dict[str, Any]:
+    answers = answers or []
+    if not is_final and not _laptop_sufficient_answers(answers):
         return {
             "summary": "I'm gathering more details to assess the repairability.",
             "follow_up_questions": [
@@ -225,25 +265,26 @@ def _mock_continue_response(round_num: int, is_final: bool) -> dict[str, Any]:
             "is_complete": False,
             "final_recommendation": None,
         }
+
     return {
         "summary": (
-            "Based on the information provided, the device has a power or component-level fault "
-            "that may be repairable."
+            "Based on the symptoms described, the device shows a power-related fault with possible causes including "
+            "the battery, charging circuit, or internal power delivery path."
         ),
         "follow_up_questions": [],
         "is_complete": True,
         "final_recommendation": {
             "repairability": "Potentially repairable",
             "repairability_score": 70,
-            "possible_issue": "Possible power circuit or battery fault",
-            "repair_areas": ["Battery", "Charging port", "Power circuit"],
+            "possible_issue": "Possible battery or power delivery fault",
+            "repair_areas": ["Battery", "Charging circuit", "Power board"],
             "repair_explanation": (
-                "The symptoms you described suggest a power-related fault which is often repairable "
-                "at a fraction of replacement cost. A qualified technician should inspect the device."
+                "The symptoms you described suggest a power-related fault which is often repairable at a fraction of replacement cost. "
+                "A qualified technician should inspect the laptop and verify whether the battery, charger circuit, or mainboard is affected."
             ),
             "recommended_4r": "Reduce",
-            "recommended_action": "Take the device to a qualified repair technician for diagnosis.",
-            "waste_impact": "Repairing this device could extend its useful life by 2–4 years and prevent up to 15 kg of e-waste.",
+            "recommended_action": "Take the laptop to a qualified repair technician for diagnosis before attempting any internal repair.",
+            "waste_impact": "Repairing this device could extend its useful life and prevent unnecessary e-waste.",
         },
     }
 
@@ -306,6 +347,7 @@ def continue_diagnostic(session_id: str, answers: list[str]) -> dict[str, Any]:
     session["round"] += 1
     round_num = session["round"]
     is_final = round_num >= MAX_ROUNDS
+    sufficient = _laptop_sufficient_answers(answers)
 
     # Append user answers to conversation
     session["conversation"].append({"role": "user", "answers": answers})
@@ -339,21 +381,29 @@ def continue_diagnostic(session_id: str, answers: list[str]) -> dict[str, Any]:
                 latest_answers=latest_answers_text,
                 round=round_num,
                 max_rounds=MAX_ROUNDS,
-                is_final=is_final,
+                is_final=is_final or sufficient,
             )
             raw = _call_gemini([prompt])
             result = _parse_json(raw)
         except Exception as exc:
             logger.warning("Gemini continue_diagnostic failed: %s — using mock", exc)
-            result = _mock_continue_response(round_num, is_final)
+            result = _mock_continue_response(round_num, is_final or sufficient, answers)
     else:
-        result = _mock_continue_response(round_num, is_final)
+        result = _mock_continue_response(round_num, is_final or sufficient, answers)
+
+    # Force completion when the user has provided sufficient evidence.
+    if sufficient and not result.get("is_complete"):
+        result["is_complete"] = True
+        result["follow_up_questions"] = []
+        result["final_recommendation"] = _mock_continue_response(round_num, True, answers)["final_recommendation"]
+        if not result.get("summary"):
+            result["summary"] = "Based on the symptoms described, the device shows a power-related fault with possible causes that fit the observed behavior."
 
     # Force completion if max rounds reached
     if is_final and not result.get("is_complete"):
         result["is_complete"] = True
         if not result.get("final_recommendation"):
-            result["final_recommendation"] = _mock_continue_response(round_num, True)["final_recommendation"]
+            result["final_recommendation"] = _mock_continue_response(round_num, True, answers)["final_recommendation"]
 
     session["is_complete"] = result.get("is_complete", False)
     session["final_recommendation"] = result.get("final_recommendation")

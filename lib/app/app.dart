@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../auth/login_screen.dart';
+import '../auth/signup_screen.dart';
+import '../models/user.dart';
 import '../screens/home_screen.dart';
 import '../screens/impact_screen.dart';
+import '../screens/profile_screen.dart';
 import '../screens/quick_scan_screen.dart';
 import '../screens/reuse_screen.dart';
+import '../services/auth_service.dart';
+import '../services/mock_auth_service.dart';
 import '../theme/app_theme.dart';
 
 class ReValueApp extends StatefulWidget {
@@ -14,14 +20,57 @@ class ReValueApp extends StatefulWidget {
 }
 
 class _ReValueAppState extends State<ReValueApp> {
+  final AuthService _authService = MockAuthService();
+  User? _currentUser;
+  bool _checkingAuth = true;
+  bool _showSignup = false;
   int _selectedIndex = 0;
 
-  late final _screens = <Widget>[
-    HomeScreen(onQuickScan: _openQuickScan),
-    const ReuseScreen(),
-    const QuickScanScreen(),
-    const ImpactScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _initializeAuth();
+  }
+
+  Future<void> _initializeAuth() async {
+    final isLoggedIn = await _authService.isLoggedIn();
+    if (!mounted) return;
+    if (isLoggedIn) {
+      final user = await _authService.getCurrentUser();
+      setState(() {
+        _currentUser = user;
+        _checkingAuth = false;
+      });
+      return;
+    }
+    setState(() => _checkingAuth = false);
+  }
+
+  void _handleLogin(User user) {
+    setState(() {
+      _currentUser = user;
+      _showSignup = false;
+      _selectedIndex = 0;
+    });
+  }
+
+  Future<void> _handleLogout() async {
+    await _authService.logout();
+    if (!mounted) return;
+    setState(() {
+      _currentUser = null;
+      _showSignup = false;
+      _selectedIndex = 0;
+    });
+  }
+
+  void _showLoginScreen() {
+    setState(() => _showSignup = false);
+  }
+
+  void _showSignupScreen() {
+    setState(() => _showSignup = true);
+  }
 
   void _openQuickScan() {
     setState(() => _selectedIndex = 2);
@@ -29,19 +78,55 @@ class _ReValueAppState extends State<ReValueApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    if (_checkingAuth) {
+      return MaterialApp(
+        title: 'ReValue',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light,
+        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
+    }
+
+    final appShell = MaterialApp(
       title: 'ReValue',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: Scaffold(
-        body: IndexedStack(index: _selectedIndex, children: _screens),
-        bottomNavigationBar: ReValueNavigationBar(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: (index) =>
-              setState(() => _selectedIndex = index),
-        ),
-      ),
+      home: _currentUser == null
+          ? (_showSignup
+                ? SignupScreen(
+                    authService: _authService,
+                    onSignupSuccess: _handleLogin,
+                    onBackToLogin: _showLoginScreen,
+                  )
+                : LoginScreen(
+                    authService: _authService,
+                    onLoginSuccess: _handleLogin,
+                    onCreateAccount: _showSignupScreen,
+                  ))
+          : Scaffold(
+              body: IndexedStack(
+                index: _selectedIndex,
+                children: [
+                  HomeScreen(user: _currentUser!, onQuickScan: _openQuickScan),
+                  const ReuseScreen(),
+                  const QuickScanScreen(),
+                  const ImpactScreen(),
+                  ProfileScreen(
+                    user: _currentUser!,
+                    authService: _authService,
+                    onLogout: _handleLogout,
+                  ),
+                ],
+              ),
+              bottomNavigationBar: ReValueNavigationBar(
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (index) =>
+                    setState(() => _selectedIndex = index),
+              ),
+            ),
     );
+
+    return appShell;
   }
 }
 
@@ -58,7 +143,7 @@ class ReValueNavigationBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BottomAppBar(
-      height: 74,
+      height: 80,
       color: Theme.of(context).colorScheme.surface,
       surfaceTintColor: Colors.transparent,
       elevation: 8,
@@ -97,6 +182,15 @@ class ReValueNavigationBar extends StatelessWidget {
               label: 'Impact',
               selected: selectedIndex == 3,
               onTap: () => onDestinationSelected(3),
+            ),
+          ),
+          Expanded(
+            child: _NavigationItem(
+              icon: Icons.person_outline,
+              selectedIcon: Icons.person,
+              label: 'Profile',
+              selected: selectedIndex == 4,
+              onTap: () => onDestinationSelected(4),
             ),
           ),
         ],
@@ -158,10 +252,7 @@ class _NavigationItem extends StatelessWidget {
 }
 
 class _QuickScanNavigationItem extends StatelessWidget {
-  const _QuickScanNavigationItem({
-    required this.selected,
-    required this.onTap,
-  });
+  const _QuickScanNavigationItem({required this.selected, required this.onTap});
 
   final bool selected;
   final VoidCallback onTap;

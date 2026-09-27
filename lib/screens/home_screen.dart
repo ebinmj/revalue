@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../models/user.dart';
 import 'reuse_screen.dart';
 import 'recycle_screen.dart';
 import 'reduce_screen.dart';
 import 'riddance_screen.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({required this.onQuickScan, super.key});
+  const HomeScreen({required this.user, required this.onQuickScan, super.key});
 
+  final User user;
   final VoidCallback onQuickScan;
 
   static const _actions = [
@@ -52,19 +54,44 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'ReValue',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.primary,
-                      letterSpacing: 0.8,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'ReValue',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.primary,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: theme.colorScheme.primaryContainer,
+                        child: Text(
+                          user.name.trim().isNotEmpty
+                              ? user.name[0].toUpperCase()
+                              : 'U',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: theme.colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Give unwanted things a better next step.',
+                    'Good morning, ${user.name.split(' ').first}',
                     style: theme.textTheme.headlineMedium?.copyWith(
                       color: theme.colorScheme.onSurface,
                       fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Give unwanted things a better next step.',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 8),

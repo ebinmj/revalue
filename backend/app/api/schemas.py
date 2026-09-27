@@ -108,6 +108,72 @@ class MarketplaceMatchResponse(BaseModel):
     disclaimer: str
 
 
+class RepairResearchRequest(BaseModel):
+    product: str = Field(min_length=1)
+    problem: str = Field(min_length=1)
+    symptoms: list[str] = Field(default_factory=list)
+    brand: str | None = None
+    model: str | None = None
+    component: str | None = None
+
+
+class RepairSource(BaseModel):
+    title: str
+    url: str
+    source: str
+    source_type: str
+    relevance_score: int = Field(ge=0, le=100)
+
+
+class RepairPartSummary(BaseModel):
+    name: str
+    part_number: str | None = None
+    brand: str | None = None
+    model: str | None = None
+    component: str | None = None
+    price: str | None = None
+    currency: str | None = None
+    seller: str | None = None
+    url: str | None = None
+    compatibility_status: str = "Needs verification"
+    source: str | None = None
+
+
+class RepairGuideSummary(BaseModel):
+    title: str
+    description: str
+    url: str
+    source: str
+    source_type: str
+    relevance_score: int = Field(ge=0, le=100)
+
+
+class RepairVideoSummary(BaseModel):
+    title: str
+    channel: str | None = None
+    url: str
+    thumbnail_url: str | None = None
+    duration: str | None = None
+    description: str
+    relevance_score: int = Field(ge=0, le=100)
+    source: str
+
+
+class RepairResearchResponse(BaseModel):
+    product: str
+    problem: str
+    symptoms: list[str] = Field(default_factory=list)
+    possible_causes: list[str] = Field(default_factory=list)
+    troubleshooting_steps: list[str] = Field(default_factory=list)
+    parts: list[RepairPartSummary] = Field(default_factory=list)
+    repair_guides: list[RepairGuideSummary] = Field(default_factory=list)
+    videos: list[RepairVideoSummary] = Field(default_factory=list)
+    safety_warnings: list[str] = Field(default_factory=list)
+    sources: list[RepairSource] = Field(default_factory=list)
+    confidence: str = "MEDIUM"
+    disclaimer: str = "Evidence-based recommendations only; verify with manufacturer support before repair."
+
+
 # ---------------------------------------------------------------------------
 # Interactive Diagnostic schemas
 # ---------------------------------------------------------------------------
