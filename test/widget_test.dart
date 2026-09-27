@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:re_value/app/app.dart';
@@ -46,6 +49,33 @@ class _TestAuthService implements AuthService {
   }
 }
 
+class _StalledAuthService implements AuthService {
+  @override
+  String? get accessToken => null;
+
+  @override
+  Future<User?> getCurrentUser() async => null;
+
+  @override
+  Future<bool> isLoggedIn() => Completer<bool>().future;
+
+  @override
+  Future<User?> login({
+    required String email,
+    required String password,
+  }) async => null;
+
+  @override
+  Future<void> logout() async {}
+
+  @override
+  Future<User?> signup({
+    required String name,
+    required String email,
+    required String password,
+  }) async => null;
+}
+
 void main() {
   testWidgets('Unauthenticated users see the login screen', (
     WidgetTester tester,
@@ -56,6 +86,19 @@ void main() {
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Login'), findsOneWidget);
     expect(find.text("Don't have an account? Sign up"), findsOneWidget);
+  });
+
+  testWidgets('Stalled session restore exits loading and shows login', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(ReValueApp(authService: _StalledAuthService()));
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Welcome back'), findsOneWidget);
   });
 
   testWidgets('Users can open the signup screen', (WidgetTester tester) async {

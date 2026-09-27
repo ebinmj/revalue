@@ -37,17 +37,25 @@ class _ReValueAppState extends State<ReValueApp> {
   }
 
   Future<void> _initializeAuth() async {
-    final isLoggedIn = await _authService.isLoggedIn();
-    if (!mounted) return;
-    if (isLoggedIn) {
-      final user = await _authService.getCurrentUser();
-      setState(() {
-        _currentUser = user;
-        _checkingAuth = false;
-      });
-      return;
+    User? user;
+    try {
+      final isLoggedIn = await _authService.isLoggedIn().timeout(
+        const Duration(seconds: 8),
+      );
+      if (isLoggedIn) {
+        user = await _authService.getCurrentUser().timeout(
+          const Duration(seconds: 8),
+        );
+      }
+    } catch (_) {
+      debugPrint('Auth session restore failed; showing the login screen.');
     }
-    setState(() => _checkingAuth = false);
+
+    if (!mounted) return;
+    setState(() {
+      _currentUser = user;
+      _checkingAuth = false;
+    });
   }
 
   void _handleLogin(User user) {
