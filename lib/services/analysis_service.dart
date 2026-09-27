@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
+import '../models/ai_analysis_result.dart';
 
 class AnalysisApiException implements Exception {
   const AnalysisApiException(this.message);
@@ -30,7 +33,7 @@ class AnalysisService {
 
   final String baseUrl;
 
-  Future<Map<String, dynamic>> analyzeImage({
+  Future<AiAnalysisResult> analyzeImage({
     required Uint8List imageBytes,
     required String message,
     required String mode,
@@ -60,11 +63,25 @@ class AnalysisService {
       final streamed = await _client
           .send(request)
           .timeout(const Duration(seconds: 60));
-      final rawBody = await streamed.stream.bytesToString();
-      final decoded = jsonDecode(rawBody);
+      final rawBody = await streamed.stream.bytesToString().timeout(
+        const Duration(seconds: 60),
+      );
+      Object? decoded;
+      try {
+        decoded = jsonDecode(rawBody);
+      } on FormatException {
+        if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+          throw AnalysisApiException(
+            'The backend returned an error (${streamed.statusCode}).',
+          );
+        }
+        throw const AnalysisApiException('The backend returned invalid JSON.');
+      }
 
       if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-        throw AnalysisApiException(_errorMessage(decoded, streamed.statusCode));
+        throw AnalysisApiException(
+          _errorMessage(decoded ?? <String, dynamic>{}, streamed.statusCode),
+        );
       }
 
       if (decoded is! Map<String, dynamic>) {
@@ -73,9 +90,17 @@ class AnalysisService {
         );
       }
 
-      return decoded;
+      try {
+        return AiAnalysisResult.fromJson(decoded);
+      } on FormatException catch (error) {
+        throw AnalysisApiException(error.message);
+      }
     } on AnalysisApiException {
       rethrow;
+    } on TimeoutException {
+      throw const AnalysisApiException(
+        'Analysis timed out. Check your connection and try again.',
+      );
     } catch (_) {
       throw const AnalysisApiException(
         'Unable to connect to ReValue AI. Check that the backend is running and try again.',

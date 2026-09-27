@@ -10,11 +10,9 @@ class AnalysisService:
     def initialize(self) -> None:
         if self._vision_service is None:
             self._vision_service = create_vision_service()
-        if not self._vision_service.ready:
-            self._vision_service.load_model()
 
     def analyze_image(self, image_bytes: bytes, message: str, mode: str) -> dict:
-        if self._vision_service is None or not self._vision_service.ready:
+        if self._vision_service is None:
             self.initialize()
         return self._vision_service.analyze(image_bytes, message)
 

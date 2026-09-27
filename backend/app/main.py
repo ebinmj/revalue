@@ -5,8 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import analysis_service, router
-from app.config import settings
+from app.api.routes import router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("revalue")
@@ -40,14 +39,7 @@ def startup_event() -> None:
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
-    return {
-        "status": "ok",
-        "model_loaded": analysis_service.model_loaded,
-        "vision_provider": settings.vision_provider,
-        "service": "ReValue API",
-        "host": settings.api_host,
-        "port": settings.api_port,
-    }
+    return {"status": "ok"}
 
 
 app.include_router(router)

@@ -2,39 +2,24 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
-import '../models/four_r_assessment.dart';
-import '../models/four_r_recommendation.dart';
-import '../models/product_analysis.dart';
+import '../models/ai_analysis_result.dart';
 import '../widgets/app_page.dart';
-import 'component_recovery_screen.dart';
-import 'recycle_screen.dart';
-import 'repair_cost_screen.dart';
-import 'riddance_screen.dart';
 
 class AnalysisResultScreen extends StatelessWidget {
   const AnalysisResultScreen({
     required this.imageBytes,
     required this.description,
-    required this.analysis,
-    required this.recommendation,
+    required this.result,
     super.key,
   });
 
   final Uint8List imageBytes;
   final String description;
-  final ProductAnalysis analysis;
-  final FourRRecommendation recommendation;
+  final AiAnalysisResult result;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final assessments = [
-      recommendation.reduce,
-      recommendation.reuse,
-      recommendation.recycle,
-      recommendation.riddance,
-    ];
-
     return Scaffold(
       appBar: AppBar(title: const Text('Analysis Result')),
       body: AppPage(
@@ -55,21 +40,20 @@ class AnalysisResultScreen extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 6),
-            Text(analysis.category, style: theme.textTheme.titleLarge),
-            const SizedBox(height: 4),
-            Text(analysis.condition, style: theme.textTheme.titleMedium),
             const SizedBox(height: 16),
-            _ResultSection(title: 'Possible issue', value: analysis.problem),
-            _ListSection(
-              title: 'Visible components',
-              values: analysis.visibleComponents,
+            _ResultSection(
+              title: 'Identified item',
+              value: result.identifiedItem,
             ),
-            _ListSection(
-              title: 'Possible materials',
-              values: analysis.possibleMaterials,
+            _ResultSection(title: 'Summary', value: result.summary),
+            _ResultSection(
+              title: 'Possible problem',
+              value: result.possibleProblem,
             ),
-            _ListSection(title: 'Risk factors', values: analysis.riskFactors),
+            _ResultSection(
+              title: 'Confidence',
+              value: _capitalize(result.confidence),
+            ),
             Card(
               color: theme.colorScheme.surfaceContainerHighest,
               child: Padding(
@@ -86,33 +70,18 @@ class AnalysisResultScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              'Your ReValue Recommendation',
+              'Recovery options',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              recommendation.recommendationTitle,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              recommendation.recommendationExplanation,
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 18),
-            ...assessments.map(
-              (assessment) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _AssessmentCard(
-                  assessment: assessment,
-                  analysis: analysis,
-                ),
-              ),
-            ),
+            _RecommendationCard(title: 'Reduce', value: result.reduce),
+            _RecommendationCard(title: 'Reuse', value: result.reuse),
+            _RecommendationCard(title: 'Recycle', value: result.recycle),
+            _RecommendationCard(title: 'Riddance', value: result.riddance),
+            if (result.followUpQuestions.isNotEmpty)
+              _QuestionSection(questions: result.followUpQuestions),
           ],
         ),
       ),
@@ -120,11 +89,11 @@ class AnalysisResultScreen extends StatelessWidget {
   }
 }
 
-class _AssessmentCard extends StatelessWidget {
-  const _AssessmentCard({required this.assessment, required this.analysis});
+class _RecommendationCard extends StatelessWidget {
+  const _RecommendationCard({required this.title, required this.value});
 
-  final FourRAssessment assessment;
-  final ProductAnalysis analysis;
+  final String title;
+  final RecoveryRecommendationResult value;
 
   @override
   Widget build(BuildContext context) {
@@ -135,41 +104,20 @@ class _AssessmentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    assessment.title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                Text(
-                  '${assessment.score}/100',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(assessment.explanation),
-            const SizedBox(height: 6),
             Text(
-              assessment.recommendedAction,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              title,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.primary,
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () =>
-                    _openAction(context, assessment.type, analysis),
-                child: Text(_actionLabel(assessment.type)),
+            const SizedBox(height: 8),
+            Text(value.recommendation),
+            const SizedBox(height: 6),
+            Text(
+              value.reason,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -177,63 +125,35 @@ class _AssessmentCard extends StatelessWidget {
       ),
     );
   }
-
-  void _openAction(
-    BuildContext context,
-    String type,
-    ProductAnalysis analysis,
-  ) {
-    final Widget destination;
-    switch (type) {
-      case 'reduce':
-        destination = RepairCostScreen(analysis: analysis);
-      case 'reuse':
-        destination = ComponentRecoveryScreen(analysis: analysis);
-      case 'recycle':
-        destination = RecycleScreen(analysis: analysis);
-      default:
-        destination = RiddanceScreen(analysis: analysis);
-    }
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => destination));
-  }
-
-  String _actionLabel(String type) => switch (type) {
-    'reduce' => 'Explore Repair',
-    'reuse' => 'Recover Components',
-    'recycle' => 'Recycling Options',
-    _ => 'Responsible Disposal',
-  };
 }
 
-class _ListSection extends StatelessWidget {
-  const _ListSection({required this.title, required this.values});
+class _QuestionSection extends StatelessWidget {
+  const _QuestionSection({required this.questions});
 
-  final String title;
-  final List<String> values;
+  final List<String> questions;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.primary,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Text(
+          'Follow-up questions',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: values.map((value) => Chip(label: Text(value))).toList(),
+        ),
+        const SizedBox(height: 4),
+        ...questions.map(
+          (question) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.help_outline),
+            title: Text(question),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -265,3 +185,6 @@ class _ResultSection extends StatelessWidget {
     );
   }
 }
+
+String _capitalize(String value) =>
+    value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';

@@ -6,8 +6,9 @@ import logging
 from typing import Any
 
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
+from app.api.schemas import QuickScanAnalysisResponse
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -33,51 +34,8 @@ class VisionProviderConfigurationError(RuntimeError):
     pass
 
 
-class GeminiProviderResponseError(RuntimeError):
+class VisionProviderResponseError(RuntimeError):
     pass
-
-
-class _GeminiItem(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-
-    category: str
-    brand: str
-    model: str
-    condition: str
-
-
-class _GeminiAnalysis(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-
-    summary: str
-    problem: str
-    confidence: float = Field(ge=0, le=1)
-
-
-class _GeminiFourRItem(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-
-    score: float = Field(ge=0, le=1)
-    reason: str
-
-
-class _GeminiFourR(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-
-    reduce: _GeminiFourRItem
-    reuse: _GeminiFourRItem
-    recycle: _GeminiFourRItem
-    riddance: _GeminiFourRItem
-
-
-class _GeminiVisionResult(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-
-    item: _GeminiItem
-    analysis: _GeminiAnalysis
-    needs_more_information: bool
-    questions: list[str]
-    four_r: _GeminiFourR
 
 
 class GeminiProvider(BaseVisionService):
@@ -109,9 +67,6 @@ class GeminiProvider(BaseVisionService):
         logger.info('Gemini vision provider ready: %s.', self._model_name)
 
     def analyze(self, image: bytes, user_message: str) -> dict[str, Any]:
-        if not self.ready:
-            self.load_model()
-
         try:
             with Image.open(io.BytesIO(image)) as source:
                 converted = source.convert('RGB')
@@ -119,19 +74,30 @@ class GeminiProvider(BaseVisionService):
                 converted.save(image_buffer, format='PNG')
         except (OSError, ValueError) as exc:
             raise ValueError('The uploaded file is not a supported image.') from exc
+        if not self.ready:
+            self.load_model()
 
-        prompt = (
-            'Analyze the provided image together with the user message as one request. '
-            'Use visual evidence and the user message jointly. Do not infer a specific '
-            'internal fault from an external image alone. If there is a swollen or leaking '
-            'battery, smoke, fire, burning smell, sparks, exposed high voltage, or severe '
-            'liquid damage, prioritize stopping use and professional service; do not give '
-            'dangerous repair steps. Use a 0-to-1 confidence value. Set '
-            'needs_more_information to false and questions to [] when the evidence is '
-            'sufficient; otherwise ask only useful, targeted follow-up questions. Return '
-            'only the requested structured result.\n\n'
-            f'User message: {user_message.strip() or "No description provided."}'
-        )
+        prompt = f'''You are the ReValue AI analysis assistant.
+
+    ReValue helps users decide what to do with unwanted, broken, used, or damaged products.
+    Analyze the uploaded image together with the user's description as one request.
+    Identify a product only when supported by the image and text. Do not invent a brand,
+    model, condition, damage, components, or materials. If information is insufficient,
+    use lower confidence and ask only useful follow-up questions; use an empty question
+    list when more information is not needed.
+
+    Provide recommendations for these recovery paths:
+    REDUCE: repair or extend the product's useful life.
+    REUSE: give the product or usable components another life.
+    RECYCLE: recover useful materials through appropriate recycling.
+    RIDDANCE: dispose responsibly when repair, reuse, or recycling are impractical.
+
+    Be cautious about safety. For swollen or leaking batteries, smoke, sparks, burning
+    smell, fire, exposed dangerous electrical components, or severe liquid damage,
+    prioritize stopping use and professional service. Never give dangerous step-by-step
+    repair instructions. Confidence must be exactly high, medium, or low.
+
+    User message: {user_message.strip() or "No description provided."}'''
         try:
             from google.genai import types
 
@@ -146,19 +112,19 @@ class GeminiProvider(BaseVisionService):
                 ],
                 config=types.GenerateContentConfig(
                     response_mime_type='application/json',
-                    response_schema=_GeminiVisionResult,
+                    response_schema=QuickScanAnalysisResponse,
                     temperature=0.2,
                     max_output_tokens=1200,
                 ),
             )
             output_text = response.text
-            result = _GeminiVisionResult.model_validate_json(output_text)
+            result = QuickScanAnalysisResponse.model_validate_json(output_text)
         except (ValidationError, json.JSONDecodeError, TypeError, AttributeError) as exc:
-            raise GeminiProviderResponseError(
+            raise VisionProviderResponseError(
                 'Gemini returned a response that did not match the analysis schema.'
             ) from exc
 
-        return {'success': True, **result.model_dump(mode='json')}
+        return result.model_dump(mode='json')
 
 
 class LocalQwenVisionService(BaseVisionService):
@@ -192,29 +158,24 @@ class LocalQwenVisionService(BaseVisionService):
         logger.info('Vision model ready: %s on %s.', self._model_name, self._device)
 
     def analyze(self, image: bytes, user_message: str) -> dict[str, Any]:
-        if not self.ready:
-            self.load_model()
-
         try:
             with Image.open(io.BytesIO(image)) as source:
                 decoded_image = source.convert('RGB')
         except (OSError, ValueError) as exc:
             raise ValueError('The uploaded file is not a supported image.') from exc
+        if not self.ready:
+            self.load_model()
 
         prompt = (
-            'Analyze the supplied photo and the user description for a repair and reuse '
-            'assessment. Report only details supported by the image or description; use '
-            '"unknown" when brand or model cannot be read. Do not claim an internal fault '
-            'can be confirmed from an external photo. Return only a JSON object with this '
-            'shape: {"item":{"category":"string","brand":"string","model":"string",'
-            '"condition":"string"},"analysis":{"summary":"string","problem":"string",'
-            '"confidence":0.0},"needs_more_information":true,"questions":["string"],'
-            '"four_r":{"reduce":{"score":0.0,"reason":"string"},'
-            '"reuse":{"score":0.0,"reason":"string"},'
-            '"recycle":{"score":0.0,"reason":"string"},'
-            '"riddance":{"score":0.0,"reason":"string"}}}. '
-            'All scores and confidence must be between 0 and 1. '
-            f'User description: {user_message.strip() or "None provided."}'
+            'Analyze the image together with the user message as one request. Do not '
+            'invent product details or claim an internal fault from an external image. '
+            'Return JSON matching QuickScanAnalysisResponse: identified_item, summary, '
+            'possible_problem, confidence (high|medium|low), reduce/reuse/recycle/riddance '
+            '(each recommendation and reason), and follow_up_questions. Be cautious about '
+            'battery, smoke, fire, sparks, burning smell, exposed electrical hazards, or '
+            'severe liquid damage; prioritize professional service and do not give dangerous '
+            'repair steps. Ask follow-up questions only when useful. '
+            f'User message: {user_message.strip() or "None provided."}'
         )
         messages = [{
             'role': 'user',
@@ -250,88 +211,14 @@ class LocalQwenVisionService(BaseVisionService):
         if start < 0 or end < start:
             raise ValueError('The vision model did not return valid structured analysis.')
         try:
-            payload = json.loads(response[start : end + 1])
-        except json.JSONDecodeError as exc:
-            raise ValueError('The vision model did not return valid structured analysis.') from exc
-
-        if not isinstance(payload, dict):
-            raise ValueError('The vision model returned an invalid analysis object.')
-        item = payload.get('item') if isinstance(payload.get('item'), dict) else {}
-        analysis = payload.get('analysis') if isinstance(payload.get('analysis'), dict) else {}
-        four_r = payload.get('four_r') if isinstance(payload.get('four_r'), dict) else {}
-        questions = payload.get('questions')
-
-        return {
-            'success': True,
-            'item': {
-                'category': str(item.get('category') or 'unknown_item'),
-                'brand': str(item.get('brand') or 'unknown'),
-                'model': str(item.get('model') or 'unknown'),
-                'condition': str(item.get('condition') or 'unknown'),
-            },
-            'analysis': {
-                'summary': str(analysis.get('summary') or 'The image was analyzed.'),
-                'problem': str(analysis.get('problem') or 'No problem was identified.'),
-                'confidence': self._score(analysis.get('confidence')),
-            },
-            'needs_more_information': bool(payload.get('needs_more_information', False)),
-            'questions': [str(question) for question in questions if isinstance(question, str)]
-            if isinstance(questions, list)
-            else [],
-            'four_r': {
-                key: {
-                    'score': self._score(
-                        four_r.get(key, {}).get('score')
-                        if isinstance(four_r.get(key), dict)
-                        else None
-                    ),
-                    'reason': str(
-                        four_r.get(key, {}).get('reason')
-                        if isinstance(four_r.get(key), dict)
-                        else 'No assessment available.'
-                    ),
-                }
-                for key in ('reduce', 'reuse', 'recycle', 'riddance')
-            },
-        }
-
-    @staticmethod
-    def _score(value: Any) -> float:
-        try:
-            return max(0.0, min(1.0, float(value)))
-        except (TypeError, ValueError):
-            return 0.0
-
-
-class MockVisionService(BaseVisionService):
-    def load_model(self) -> None:
-        self.ready = True
-
-    def analyze(self, image: bytes, user_message: str) -> dict[str, Any]:
-        if not self.ready:
-            self.load_model()
-        return {
-            'success': True,
-            'item': {
-                'category': 'unknown_item',
-                'brand': 'unknown',
-                'model': 'unknown',
-                'condition': 'unknown',
-            },
-            'analysis': {
-                'summary': 'Mock provider response; no image model was run.',
-                'problem': user_message or 'No problem description was provided.',
-                'confidence': 0.0,
-            },
-            'needs_more_information': True,
-            'questions': ['What item is shown, and what issue are you seeing?'],
-            'four_r': {
-                'reduce': {'score': 0.0, 'reason': 'Mock provider has no assessment.'},
-                'reuse': {'score': 0.0, 'reason': 'Mock provider has no assessment.'},
-                'recycle': {'score': 0.0, 'reason': 'Mock provider has no assessment.'},
-                'riddance': {'score': 0.0, 'reason': 'Mock provider has no assessment.'},
-            },
-        }
+            payload = QuickScanAnalysisResponse.model_validate_json(
+                response[start : end + 1]
+            )
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise VisionProviderResponseError(
+                'Vision provider returned an invalid analysis response.'
+            ) from exc
+        return payload.model_dump(mode='json')
 
 
 def create_vision_service() -> BaseVisionService:
@@ -340,6 +227,4 @@ def create_vision_service() -> BaseVisionService:
         return GeminiProvider()
     if provider == 'qwen':
         return LocalQwenVisionService()
-    if provider == 'mock':
-        return MockVisionService()
     raise ValueError(f'Unsupported vision provider: {settings.vision_provider}')

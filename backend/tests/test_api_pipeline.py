@@ -1,5 +1,4 @@
 import io
-import os
 import unittest
 import base64
 import json
@@ -8,8 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from PIL import Image
-
-os.environ['REVALUE_VISION_PROVIDER'] = 'mock'
 
 from fastapi.testclient import TestClient
 
@@ -37,24 +34,55 @@ class ApiPipelineTests(unittest.TestCase):
         response = self.client.get('/api/health')
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertTrue(payload['status'] == 'ok' or payload['status'] == 'healthy')
-        self.assertIn('model_loaded', payload)
+        self.assertEqual(payload, {'status': 'ok'})
 
     def test_analyze_accepts_multipart_upload_and_returns_structured_data(self) -> None:
         image_bytes = b'fake-image-content'
-        response = self.client.post(
-            '/api/analyze',
-            files={'image': ('laptop.jpg', io.BytesIO(image_bytes), 'image/jpeg')},
-            data={'message': 'My laptop is not turning on.', 'mode': 'quick_scan', 'conversation_id': 'abc123'},
-            timeout=20,
-        )
+        generated = {
+            'identified_item': 'ASUS laptop',
+            'summary': 'The photo shows a laptop; the user reports it does not turn on.',
+            'possible_problem': 'Possible power or charging-related issue.',
+            'confidence': 'medium',
+            'reduce': {'recommendation': 'Investigate repair.', 'reason': 'Repair may extend use.'},
+            'reuse': {'recommendation': 'Consider component recovery.', 'reason': 'Parts may remain useful.'},
+            'recycle': {'recommendation': 'Use electronics recycling.', 'reason': 'Keep e-waste out of household waste.'},
+            'riddance': {'recommendation': 'Dispose through an authorized facility.', 'reason': 'Use responsible disposal.'},
+            'follow_up_questions': ['Does the charging indicator light up?'],
+        }
+        with patch('app.api.routes.analysis_service.analyze_image', return_value=generated):
+            response = self.client.post(
+                '/api/analyze',
+                files={'image': ('laptop.jpg', io.BytesIO(image_bytes), 'image/jpeg')},
+                data={'message': 'My laptop is not turning on.'},
+                timeout=20,
+            )
 
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
-        self.assertTrue(payload['success'])
-        self.assertIn('item', payload)
-        self.assertIn('analysis', payload)
-        self.assertIn('four_r', payload)
+        self.assertEqual(payload['identified_item'], 'ASUS laptop')
+        self.assertEqual(payload['confidence'], 'medium')
+        self.assertIn('reduce', payload)
+        self.assertEqual(payload['follow_up_questions'], ['Does the charging indicator light up?'])
+
+    def test_analyze_rejects_missing_image_with_bad_request(self) -> None:
+        response = self.client.post(
+            '/api/analyze',
+            data={'message': 'My laptop does not turn on.'},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_analyze_rejects_invalid_image_with_bad_request(self) -> None:
+        with (
+            patch.object(settings, 'vision_provider', 'gemini'),
+            patch.object(settings, 'gemini_api_key', None),
+            patch('app.api.routes.analysis_service', AnalysisService()),
+        ):
+            response = self.client.post(
+                '/api/analyze',
+                files={'image': ('item.png', io.BytesIO(b'not-an-image'), 'image/png')},
+                data={'message': 'This is broken.'},
+            )
+        self.assertEqual(response.status_code, 400)
 
     def test_qwen_provider_passes_uploaded_image_to_model_and_parses_json(self) -> None:
         image_buffer = io.BytesIO()
@@ -77,11 +105,13 @@ class ApiPipelineTests(unittest.TestCase):
 
             def batch_decode(self, tokens: FakeGeneratedTokens, **kwargs: object) -> list[str]:
                 return [
-                    '{"item":{"category":"laptop","brand":"unknown",'
-                    '"model":"unknown","condition":"worn"},'
-                    '"analysis":{"summary":"Laptop visible.","problem":"No power",'
-                    '"confidence":0.8},"needs_more_information":true,"questions":[], '
-                    '"four_r":{"reduce":{"score":0.9,"reason":"Repair may be viable."}}}'
+                    '{"identified_item":"Laptop","summary":"Laptop visible.",'
+                    '"possible_problem":"Possible power issue.","confidence":"medium",'
+                    '"reduce":{"recommendation":"Explore repair.","reason":"May extend use."},'
+                    '"reuse":{"recommendation":"Recover components.","reason":"Parts may be useful."},'
+                    '"recycle":{"recommendation":"Recycle responsibly.","reason":"Recover materials."},'
+                    '"riddance":{"recommendation":"Dispose responsibly.","reason":"Last resort."},'
+                    '"follow_up_questions":[]}'
                 ]
 
         class FakeModel:
@@ -99,34 +129,23 @@ class ApiPipelineTests(unittest.TestCase):
         result = provider.analyze_image(image_bytes, 'It will not power on.', 'quick_scan')
 
         self.assertEqual(processor.received_image.size, (12, 8))
-        self.assertEqual(result['item']['category'], 'laptop')
-        self.assertEqual(result['analysis']['problem'], 'No power')
-        self.assertEqual(result['four_r']['reduce']['score'], 0.9)
+        self.assertEqual(result['identified_item'], 'Laptop')
+        self.assertEqual(result['possible_problem'], 'Possible power issue.')
 
     def test_gemini_provider_sends_image_and_message_in_one_request(self) -> None:
         image_buffer = io.BytesIO()
         Image.new('RGB', (10, 6), color='red').save(image_buffer, format='PNG')
         image_bytes = image_buffer.getvalue()
         generated_result = {
-            'item': {
-                'category': 'laptop',
-                'brand': 'ASUS',
-                'model': 'unknown',
-                'condition': 'unknown',
-            },
-            'analysis': {
-                'summary': 'The photo shows an ASUS laptop; the user reports no power.',
-                'problem': 'Possible power or charging issue.',
-                'confidence': 0.72,
-            },
-            'needs_more_information': True,
-            'questions': ['Does the charging light turn on?'],
-            'four_r': {
-                'reduce': {'score': 0.8, 'reason': 'Repair may extend its useful life.'},
-                'reuse': {'score': 0.5, 'reason': 'Reuse may be possible after assessment.'},
-                'recycle': {'score': 0.6, 'reason': 'Recycle if repair is not viable.'},
-                'riddance': {'score': 0.2, 'reason': 'Use responsible e-waste disposal.'},
-            },
+            'identified_item': 'ASUS laptop',
+            'summary': 'The photo shows an ASUS laptop; the user reports no power.',
+            'possible_problem': 'Possible power or charging issue.',
+            'confidence': 'medium',
+            'reduce': {'recommendation': 'Investigate repair.', 'reason': 'Repair may extend use.'},
+            'reuse': {'recommendation': 'Consider component recovery.', 'reason': 'Parts may remain useful.'},
+            'recycle': {'recommendation': 'Use electronics recycling.', 'reason': 'Recover useful materials.'},
+            'riddance': {'recommendation': 'Dispose responsibly.', 'reason': 'Last resort.'},
+            'follow_up_questions': ['Does the charging light turn on?'],
         }
 
         class FakeInteractions:
@@ -159,10 +178,13 @@ class ApiPipelineTests(unittest.TestCase):
             self.assertEqual(received_image.getpixel((0, 0)), (255, 0, 0))
         self.assertEqual(models.request['model'], 'test-model')
         self.assertEqual(models.request['config'].response_mime_type, 'application/json')
-        self.assertEqual(result['item']['brand'], 'ASUS')
-        self.assertIn('four_r', result)
+        self.assertEqual(result['identified_item'], 'ASUS laptop')
+        self.assertEqual(result['confidence'], 'medium')
+        self.assertIn('riddance', result)
 
     def test_gemini_requires_backend_api_key_instead_of_falling_back(self) -> None:
+        image_buffer = io.BytesIO()
+        Image.new('RGB', (8, 8), color='blue').save(image_buffer, format='PNG')
         with (
             patch.object(settings, 'vision_provider', 'gemini'),
             patch.object(settings, 'gemini_api_key', None),
@@ -170,7 +192,7 @@ class ApiPipelineTests(unittest.TestCase):
         ):
             response = self.client.post(
                 '/api/analyze',
-                files={'image': ('item.png', io.BytesIO(b'image'), 'image/png')},
+                files={'image': ('item.png', io.BytesIO(image_buffer.getvalue()), 'image/png')},
                 data={'message': 'The item does not turn on.'},
             )
 

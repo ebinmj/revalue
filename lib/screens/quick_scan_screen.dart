@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'analysis_result_screen.dart';
 import '../services/analysis_service.dart';
 import '../widgets/app_page.dart';
 
@@ -106,10 +107,12 @@ class _QuickScanScreenState extends State<QuickScanScreen> {
         _isAnalyzing = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'AI response received: ${result['analysis']?['summary'] ?? 'Item identified.'}',
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AnalysisResultScreen(
+            imageBytes: _selectedImageBytes!,
+            description: description,
+            result: result,
           ),
         ),
       );
@@ -250,11 +253,24 @@ class _QuickScanScreenState extends State<QuickScanScreen> {
                 color: theme.colorScheme.errorContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Text(
-                _analysisError!,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onErrorContainer,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _analysisError!,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _isAnalyzing ? null : _startDiagnostic,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

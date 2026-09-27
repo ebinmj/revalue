@@ -24,6 +24,7 @@ from app.api.schemas import (
     ListingStatus,
     MarketplaceListingCreate,
     MarketplaceListingUpdate,
+    QuickScanAnalysisResponse,
     RecommendRequest,
     RecommendResponse,
     RepairEstimateRequest,
@@ -36,7 +37,10 @@ from app.engine.mock_engine import estimate_repair, recommend_item
 from app.search.web_search import PartSearchService, RepairResourceService, VideoSearchService, WebSearchService
 from app.services.analysis_service import AnalysisService
 from app.services.supabase_marketplace import SupabaseMarketplaceService
-from app.services.vision_service import VisionProviderConfigurationError
+from app.services.vision_service import (
+    VisionProviderConfigurationError,
+    VisionProviderResponseError,
+)
 
 logger = logging.getLogger("revalue")
 router = APIRouter(prefix="/api")
@@ -56,24 +60,25 @@ def authenticated_user(
 
 @router.get("/health")
 def health() -> dict[str, object]:
-    return {
-        "status": "ok",
-        "model_loaded": True,
-    }
+    return {"status": "ok"}
 
 
-@router.post("/analyze")
+@router.post("/analyze", response_model=QuickScanAnalysisResponse)
 async def analyze(
-    image: UploadFile = File(...),
+    image: UploadFile | None = File(default=None),
     message: str = Form(...),
     mode: str = Form("quick_scan"),
     conversation_id: str | None = Form(default=None),
-) -> dict:
+) -> QuickScanAnalysisResponse:
     logger.info("REQUEST RECEIVED")
     logger.info("IMAGE RECEIVED")
     logger.info("ANALYSIS STARTED")
 
+    if image is None:
+        raise HTTPException(status_code=400, detail="An image file is required.")
     image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded image is empty.")
     try:
         result = await run_in_threadpool(
             analysis_service.analyze_image,
@@ -83,13 +88,16 @@ async def analyze(
         )
     except VisionProviderConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except VisionProviderResponseError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception('Image analysis failed.')
-        raise HTTPException(status_code=502, detail='Vision analysis failed.') from exc
-    result["conversation_id"] = conversation_id or "demo-conversation"
-    result["mode"] = mode
+        raise HTTPException(
+            status_code=502,
+            detail='Gemini analysis failed. Check backend logs for provider details.',
+        ) from exc
 
     logger.info("ANALYSIS COMPLETED")
     logger.info("RESPONSE SENT")

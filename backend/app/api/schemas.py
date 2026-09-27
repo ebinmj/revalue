@@ -1,5 +1,6 @@
 from decimal import Decimal
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,6 +51,27 @@ class ComponentCreate(BaseModel):
     model: str | None = Field(default=None, max_length=120)
     condition: str = Field(min_length=1, max_length=80)
     compatibility: str | None = Field(default=None, max_length=500)
+
+
+class RecoveryRecommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recommendation: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class QuickScanAnalysisResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    identified_item: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    possible_problem: str = Field(min_length=1)
+    confidence: Literal["high", "medium", "low"]
+    reduce: RecoveryRecommendation
+    reuse: RecoveryRecommendation
+    recycle: RecoveryRecommendation
+    riddance: RecoveryRecommendation
+    follow_up_questions: list[str] = Field(max_length=5)
 
 
 class AnalyzeRequest(BaseModel):
