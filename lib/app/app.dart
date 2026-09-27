@@ -1,0 +1,232 @@
+import 'package:flutter/material.dart';
+
+import '../screens/home_screen.dart';
+import '../screens/impact_screen.dart';
+import '../screens/quick_scan_screen.dart';
+import '../screens/reuse_screen.dart';
+import '../theme/app_theme.dart';
+
+class ReValueApp extends StatefulWidget {
+  const ReValueApp({super.key});
+
+  @override
+  State<ReValueApp> createState() => _ReValueAppState();
+}
+
+class _ReValueAppState extends State<ReValueApp> {
+  int _selectedIndex = 0;
+
+  late final _screens = <Widget>[
+    HomeScreen(onQuickScan: _openQuickScan),
+    const ReuseScreen(),
+    const QuickScanScreen(),
+    const ImpactScreen(),
+  ];
+
+  void _openQuickScan() {
+    setState(() => _selectedIndex = 2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'ReValue',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light,
+      home: Scaffold(
+        body: IndexedStack(index: _selectedIndex, children: _screens),
+        bottomNavigationBar: ReValueNavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) =>
+              setState(() => _selectedIndex = index),
+        ),
+      ),
+    );
+  }
+}
+
+class ReValueNavigationBar extends StatelessWidget {
+  const ReValueNavigationBar({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+    super.key,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return BottomAppBar(
+      height: 74,
+      color: Theme.of(context).colorScheme.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 8,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          Expanded(
+            child: _NavigationItem(
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home,
+              label: 'Home',
+              selected: selectedIndex == 0,
+              onTap: () => onDestinationSelected(0),
+            ),
+          ),
+          Expanded(
+            child: _NavigationItem(
+              icon: Icons.storefront_outlined,
+              selectedIcon: Icons.storefront,
+              label: 'Reuse',
+              selected: selectedIndex == 1,
+              onTap: () => onDestinationSelected(1),
+            ),
+          ),
+          Expanded(
+            child: _QuickScanNavigationItem(
+              selected: selectedIndex == 2,
+              onTap: () => onDestinationSelected(2),
+            ),
+          ),
+          Expanded(
+            child: _NavigationItem(
+              icon: Icons.insights_outlined,
+              selectedIcon: Icons.insights,
+              label: 'Impact',
+              selected: selectedIndex == 3,
+              onTap: () => onDestinationSelected(3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavigationItem extends StatelessWidget {
+  const _NavigationItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = selected ? colorScheme.primary : colorScheme.onSurfaceVariant;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(selected ? selectedIcon : icon, color: color, size: 22),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                  fontSize: 11,
+                  height: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickScanNavigationItem extends StatelessWidget {
+  const _QuickScanNavigationItem({
+    required this.selected,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Quick Scan',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? colorScheme.primary
+                      : colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.primary.withValues(
+                        alpha: selected ? 0.35 : 0.15,
+                      ),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.document_scanner,
+                  color: selected
+                      ? colorScheme.onPrimary
+                      : colorScheme.onPrimaryContainer,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Quick Scan',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: selected
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 10,
+                  height: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
