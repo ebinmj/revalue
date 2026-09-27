@@ -101,6 +101,18 @@ void main() {
     expect(find.text('Welcome back'), findsOneWidget);
   });
 
+  testWidgets('AI test mode opens Quick Scan without checking auth', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      ReValueApp(aiTestMode: true, authService: _StalledAuthService()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Quick Scan'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
   testWidgets('Users can open the signup screen', (WidgetTester tester) async {
     await tester.pumpWidget(ReValueApp(authService: _TestAuthService()));
     await tester.pumpAndSettle();

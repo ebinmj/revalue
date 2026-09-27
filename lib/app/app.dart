@@ -14,15 +14,19 @@ import '../services/supabase_auth_service.dart';
 import '../theme/app_theme.dart';
 
 class ReValueApp extends StatefulWidget {
-  const ReValueApp({this.authService, super.key});
+  const ReValueApp({this.authService, this.aiTestMode, super.key});
 
   final AuthService? authService;
+  final bool? aiTestMode;
 
   @override
   State<ReValueApp> createState() => _ReValueAppState();
 }
 
 class _ReValueAppState extends State<ReValueApp> {
+  bool get _aiTestMode =>
+      widget.aiTestMode ?? const bool.fromEnvironment('REVALUE_AI_TEST_MODE');
+
   late final AuthService _authService =
       widget.authService ?? SupabaseAuthService();
   User? _currentUser;
@@ -33,6 +37,10 @@ class _ReValueAppState extends State<ReValueApp> {
   @override
   void initState() {
     super.initState();
+    if (_aiTestMode) {
+      _checkingAuth = false;
+      return;
+    }
     _initializeAuth();
   }
 
@@ -103,7 +111,9 @@ class _ReValueAppState extends State<ReValueApp> {
       title: 'ReValue',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: _currentUser == null
+      home: _aiTestMode
+          ? const Scaffold(body: QuickScanScreen())
+          : _currentUser == null
           ? (_showSignup
                 ? SignupScreen(
                     authService: _authService,
